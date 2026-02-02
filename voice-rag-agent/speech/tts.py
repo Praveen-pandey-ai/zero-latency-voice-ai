@@ -269,22 +269,51 @@ def speak(text: str):
 
     # Try decoding MP3 using pydub (preferred), then soundfile, else save to disk
     if AudioSegment is not None:
-        try:
-            seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
-            samples = np.array(seg.get_array_of_samples())
-            if seg.channels > 1:
-                samples = samples.reshape((-1, seg.channels))
-            # normalize based on sample width
-            max_val = float(1 << (8 * seg.sample_width - 1))
-            audio_np = samples.astype(np.float32) / max_val
-            if sd is None:
-                print("[Audio playback skipped] sounddevice not available")
+            try:
+                seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+
+                # Optional downsampling / re-encoding to reduce file size for saved output
+                try:
+                    target_rate = int(os.getenv("TTS_TARGET_RATE", "22050"))
+                except Exception:
+                    target_rate = 22050
+                try:
+                    target_channels = int(os.getenv("TTS_TARGET_CHANNELS", "1"))
+                except Exception:
+                    target_channels = 1
+                target_bitrate = os.getenv("TTS_TARGET_BITRATE", "64k")
+
+                # Create a reduced-quality version for saving/export; use for playback to reduce CPU/IO
+                reduced_seg = seg.set_frame_rate(target_rate).set_channels(target_channels)
+
+                # Normalize based on sample width and convert to float32 numpy array for playback
+                samples = np.array(reduced_seg.get_array_of_samples())
+                if reduced_seg.channels > 1:
+                    samples = samples.reshape((-1, reduced_seg.channels))
+                max_val = float(1 << (8 * reduced_seg.sample_width - 1))
+                audio_np = samples.astype(np.float32) / max_val
+
+                if sd is None:
+                    print("[Audio playback skipped] sounddevice not available")
+                else:
+                    sd.play(audio_np, samplerate=reduced_seg.frame_rate)
+                    sd.wait()
+
+                # Export reduced MP3 bytes for smaller on-disk files (if needed)
+                try:
+                    out_buf = io.BytesIO()
+                    reduced_seg.export(out_buf, format="mp3", bitrate=target_bitrate)
+                    out_buf.seek(0)
+                    reduced_bytes = out_buf.read()
+                    # overwrite audio_bytes with reduced mp3 for downstream saving
+                    audio_bytes = reduced_bytes
+                except Exception:
+                    # If export fails, keep original audio_bytes
+                    pass
+
                 return
-            sd.play(audio_np, samplerate=seg.frame_rate)
-            sd.wait()
-            return
-        except Exception as e:
-            print(f"[TTS decode with pydub failed] {e}")
+            except Exception as e:
+                print(f"[TTS decode with pydub failed] {e}")
 
     if sf is not None:
         try:
