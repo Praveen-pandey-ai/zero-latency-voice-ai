@@ -1,0 +1,19 @@
+
+# Optional but recommended for better retrieval and reranking
+sentence-transformers
+faiss-cpu
+rank-bm25
+soundfile
+sounddevice
+pydub
+livekit
+assemblyai
+cartesia
+faiss-cpu
+sentence-transformers
+rank-bm25
+transformers
+torch
+fastapi
+uvicorn
+numpy
